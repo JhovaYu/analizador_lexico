@@ -5,10 +5,32 @@ ui/widgets/graph_view.py — AST Graph Viewer.
 """
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QGraphicsView, QGraphicsScene, 
-    QHBoxLayout, QComboBox, QPushButton
+    QHBoxLayout, QComboBox, QPushButton, QCheckBox
 )
 from PyQt6.QtCore import Qt, QTimer, QRectF, pyqtSignal
 from PyQt6.QtGui import QColor, QPen, QBrush, QFont, QPainter
+
+class ASTGraphicsView(QGraphicsView):
+    def __init__(self, scene, parent=None):
+        super().__init__(scene, parent)
+        self.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            zoom_in = 1.15
+            zoom_out = 1.0 / zoom_in
+            factor = zoom_in if event.angleDelta().y() > 0 else zoom_out
+            
+            # Limit zoom boundaries securely
+            current_scale = self.transform().m11()
+            if 0.1 <= current_scale * factor <= 5.0:
+                self.scale(factor, factor)
+                
+            event.accept()
+        else:
+            super().wheelEvent(event)
 
 class _NodeItem:
     """Clase local pequeña para guardar coordenadas y datos graficos de un nodo."""
@@ -28,10 +50,12 @@ class _NodeItem:
         self.H = 30
 
 class ASTGraphWidget(QWidget):
+    request_maximize = pyqtSignal(bool)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.scene = QGraphicsScene()
-        self.view = QGraphicsView(self.scene)
+        self.view = ASTGraphicsView(self.scene)
         
         # Guardar estado para animación
         self._items = {} # id(node) -> _NodeItem
@@ -57,6 +81,13 @@ class ASTGraphWidget(QWidget):
         t_layout = QHBoxLayout(self.toolbar)
         t_layout.setContentsMargins(10, 5, 10, 5)
         
+        self.cb_ast_mode = QCheckBox("Modo Árbol Sencillo (AST)")
+        self.cb_ast_mode.setChecked(False)
+        self.cb_ast_mode.setObjectName("label_muted")
+        # Reconectar si se cambia el check
+        self.cb_ast_mode.stateChanged.connect(self._re_render_if_possible)
+        t_layout.addWidget(self.cb_ast_mode)
+        
         self.cb_traversal = QComboBox()
         self.cb_traversal.addItems(["Preorden", "Inorden", "Postorden"])
         t_layout.addWidget(self.cb_traversal)
@@ -65,43 +96,88 @@ class ASTGraphWidget(QWidget):
         self.btn_play.setObjectName("btn_analyze")
         self.btn_play.clicked.connect(self._start_animation)
         t_layout.addWidget(self.btn_play)
+        
+        self.btn_stop = QPushButton("■ Detener")
+        self.btn_stop.setObjectName("btn_step")
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.clicked.connect(self._stop_animation)
+        t_layout.addWidget(self.btn_stop)
+        
         t_layout.addStretch()
+        
+        self.btn_zoom_out = QPushButton("−")
+        self.btn_zoom_out.setObjectName("btn_step")
+        self.btn_zoom_out.setFixedSize(30, 30)
+        self.btn_zoom_out.clicked.connect(lambda: self.view.scale(1/1.2, 1/1.2))
+        t_layout.addWidget(self.btn_zoom_out)
+        
+        self.btn_zoom_in = QPushButton("+")
+        self.btn_zoom_in.setObjectName("btn_step")
+        self.btn_zoom_in.setFixedSize(30, 30)
+        self.btn_zoom_in.clicked.connect(lambda: self.view.scale(1.2, 1.2))
+        t_layout.addWidget(self.btn_zoom_in)
+        
+        self.btn_max = QPushButton("⛶ Maximizar")
+        self.btn_max.setObjectName("btn_step")
+        self.btn_max.clicked.connect(self._toggle_maximize)
+        self._is_maximized = False
+        t_layout.addWidget(self.btn_max)
         
         layout.addWidget(self.toolbar)
         
         # View
         self.view.setObjectName("ast_graph_view")
-        self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
-        self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         layout.addWidget(self.view)
         
         self.setLayout(layout)
 
     def draw_tree(self, root_node, pre, inorder, post) -> None:
         self._timer.stop()
+        self.btn_stop.setEnabled(False)
         self.scene.clear()
+        
+        # Reset scene rect before calculating so it doesn't wander left/off-screen
+        self.scene.setSceneRect(QRectF())
+        
         self._items.clear()
         self._edges.clear()
         
         if not root_node:
+            self._current_root = None
             return
             
+        self._current_root = root_node
         self._traversals["Preorden"] = pre
         self._traversals["Inorden"] = inorder
         self._traversals["Postorden"] = post
         
         # LAYOUT: Jerárquico recursivo Top-Down Custom
-        # 1. Asignamos anchura y posX a toda la capa inferior.
         X_SEP = 100
         Y_SEP = 80
-        
-        # Computar X recursivamente:
-        # El X de un nodo interno es el promedio de los X de sus hijos.
-        # Si es una hoja, es el max_x_actual + X_SEP
         max_x = [0]
         
+        is_simple_mode = self.cb_ast_mode.isChecked()
+        
+        def get_effective_children(n):
+            if not hasattr(n, 'get_children'): return []
+            children = n.get_children()
+            if not is_simple_mode:
+                return children
+                
+            eff = []
+            for c in children:
+                curr = c
+                while hasattr(curr, 'get_children') and len(curr.get_children()) == 1:
+                    from core.parse_tree_nodes import TerminalNode
+                    child = curr.get_children()[0]
+                    if isinstance(child, TerminalNode):
+                        break
+                    curr = child
+                eff.append(curr)
+            return eff
+
         def calculate_positions(node, depth):
-            children = node.get_children()
+            children = get_effective_children(node)
             child_coords = []
             
             for c in children:
@@ -133,6 +209,16 @@ class ASTGraphWidget(QWidget):
         rect = self.scene.itemsBoundingRect()
         rect.adjust(-margin, -margin, margin, margin)
         self.view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        self.view.centerOn(rect.center())
+
+    def _re_render_if_possible(self):
+        if hasattr(self, "_current_root") and self._current_root:
+            self.draw_tree(
+                self._current_root, 
+                self._traversals["Preorden"], 
+                self._traversals["Inorden"], 
+                self._traversals["Postorden"]
+            )
 
     def _render_scene(self) -> None:
         self.scene.clear()
@@ -162,12 +248,32 @@ class ASTGraphWidget(QWidget):
             br = text.boundingRect()
             text.setPos(itm.x - br.width()/2, itm.y - br.height()/2)
 
+    def _stop_animation(self) -> None:
+        self._timer.stop()
+        self.btn_play.setEnabled(True)
+        self.btn_stop.setEnabled(False)
+        # Reset color
+        for itm in self._items.values():
+            itm.bg_color = QColor("#E8E8E2") if not itm.is_terminal else QColor("#DDDDD6")
+            itm.border_color = QColor("#8A8A8A")
+            itm.text_color = QColor("#1A1A1A")
+        self._render_scene()
+
+    def _toggle_maximize(self) -> None:
+        self._is_maximized = not self._is_maximized
+        if self._is_maximized:
+            self.btn_max.setText("↙ Restaurar")
+        else:
+            self.btn_max.setText("⛶ Maximizar")
+        self.request_maximize.emit(self._is_maximized)
+
     def _start_animation(self) -> None:
         sel = self.cb_traversal.currentText()
         self._animation_steps = self._traversals.get(sel, [])
         if not self._animation_steps: return
         
         self.btn_play.setEnabled(False)
+        self.btn_stop.setEnabled(True)
         self._current_anim_idx = 0
         # Reset defaults
         for itm in self._items.values():
@@ -190,6 +296,7 @@ class ASTGraphWidget(QWidget):
         if self._current_anim_idx >= len(self._animation_steps):
             self._timer.stop()
             self.btn_play.setEnabled(True)
+            self.btn_stop.setEnabled(False)
             self._render_scene()
             return
             

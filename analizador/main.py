@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont, QFontDatabase
-from ui.app import MainWindow
+from ui.main_window import MainWindow
 
 
 def _load_stylesheet(app: QApplication) -> None:

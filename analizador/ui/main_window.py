@@ -57,10 +57,13 @@ class MainWindow(QMainWindow):
         
         self._editor = CodeEditorWidget()
         self._tabs = QTabWidget()
+        self._tabs.tabBar().setExpanding(True)
         
         self._lex_tab = LexicalTab()
         self._syn_tab = SyntacticTab()
         self._sem_tab = SemanticTab()
+        
+        self._syn_tab.graph_view.request_maximize.connect(self._on_graph_maximize)
         
         self._tabs.addTab(self._lex_tab, "1. Léxico")
         self._tabs.addTab(self._syn_tab, "2. Sintáctico")
@@ -210,6 +213,19 @@ class MainWindow(QMainWindow):
         # Update metrics status final en ambos casos de éxito completo
         self._update_status_metrics()
 
+    def _on_graph_maximize(self, maximized: bool):
+        self._editor.setVisible(not maximized)
+        if maximized:
+            self.btn_all.setVisible(False)
+            self.btn_step.setVisible(False)
+            self.rb_live.setVisible(False)
+            self.rb_step.setVisible(False)
+        else:
+            self.btn_all.setVisible(True)
+            self.btn_step.setVisible(True)
+            self.rb_live.setVisible(True)
+            self.rb_step.setVisible(True)
+
     def _reset_state(self):
         self.pipe_state = 0
         self.btn_step.setText("Paso a Paso")
@@ -247,6 +263,11 @@ class MainWindow(QMainWindow):
         self._lex_tab.populate(formatted)
         
         if not self.rb_live.isChecked():
+            # Evita spoilers de las fases futuras limpiándolas
+            self._syn_tab.set_tree(None, [], [], [])
+            self._sem_tab.populate([], [])
+            self._editor.highlight_errors([])
+            
             self._tabs.setCurrentIndex(0)
             self._status.showMessage("Fase 1: Análisis Léxico Completado.")
 
@@ -260,6 +281,8 @@ class MainWindow(QMainWindow):
             self._syn_tab.set_tree(self._current_ast, pre, ino, post)
             
             if not self.rb_live.isChecked():
+                self._sem_tab.populate([], [])
+                self._editor.highlight_errors([])
                 self._tabs.setCurrentIndex(1)
                 self._status.showMessage("Fase 2: Análisis Sintáctico Completado.")
             return True

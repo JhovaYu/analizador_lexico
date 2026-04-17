@@ -140,13 +140,17 @@ QPushButton:focus {
 /* =========================================================
    Panel derecho — tabs
    ========================================================= */
+QTabWidget {
+    background-color: #F5F5F0;
+}
+
 QTabWidget::pane {
-    background-color: #EEEEE8;
+    background-color: #F5F5F0;
     border: none;
 }
 
 QTabBar {
-    background-color: #E8E8E2;
+    background-color: #F5F5F0;
 }
 
 QTabBar::tab {
@@ -345,6 +349,37 @@ QToolTip {
     padding: 4px 8px;
     border-radius: 3px;
     font-size: 12px;
+}
+
+/* =========================================================
+   Radio Buttons
+   ========================================================= */
+QRadioButton {
+    color: #5A5A5A;
+    font-weight: 500;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+QRadioButton:hover {
+    background-color: #E8E8E2;
+}
+
+QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    border-radius: 8px;
+    border: 2px solid #8A8A8A;
+    background-color: #F5F5F0;
+}
+
+QRadioButton::indicator:checked {
+    border: 3px solid #006565;
+    background-color: #006565;
+}
+
+QRadioButton::indicator:hover {
+    border: 2px solid #006565;
 }
 
 /* =========================================================
