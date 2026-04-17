@@ -1,6 +1,7 @@
 /*
  * style.qss — Design System "Paper and Ink / Deep Teal"
  * Aplicación: Jarvis — Analizador Léxico, Sintáctico y Semántico
+ * Reglas Estrictas: SIN FONDOS OSCUROS/NEGROS.
  */
 
 /* =========================================================
@@ -26,8 +27,8 @@ QWidget {
 #topbar {
     background-color: #F5F5F0;
     border-bottom: 1px solid #DDDDD6;
-    min-height: 48px;
-    max-height: 48px;
+    min-height: 52px;
+    max-height: 52px;
 }
 
 #app_title {
@@ -75,30 +76,37 @@ QPushButton:focus {
 }
 
 #btn_analyze:disabled {
-    background-color: #8A8A8A;
-    color: #EEEEE8;
+    background-color: #DDDDD6;
+    color: #8A8A8A;
 }
 
-/* Ghost: Limpiar */
-#btn_clear {
+/* Secondary: Paso a Paso */
+#btn_step {
+    background-color: #E8E8E2;
+    color: #006565;
+    padding: 7px 16px;
+    border-radius: 4px;
+    font-weight: 600;
+    border: 1px solid #DDDDD6;
+}
+
+#btn_step:hover {
+    background-color: #DDDDD6;
+}
+
+#btn_step:pressed {
+    background-color: #8A8A8A;
+    color: #FFFFFF;
+}
+
+/* Ghost: Limpiar / Exportar */
+#btn_clear, #btn_export {
     background-color: transparent;
     color: #5A5A5A;
     padding: 7px 14px;
 }
 
-#btn_clear:hover {
-    background-color: #EEEEE8;
-    color: #1A1A1A;
-}
-
-/* Ghost icon: Exportar */
-#btn_export {
-    background-color: transparent;
-    color: #5A5A5A;
-    padding: 7px 12px;
-}
-
-#btn_export:hover {
+#btn_clear:hover, #btn_export:hover {
     background-color: #EEEEE8;
     color: #1A1A1A;
 }
@@ -165,29 +173,30 @@ QTabBar::tab:hover:!selected {
 }
 
 /* =========================================================
-   Tabla de tokens
+   Tablas (Tokens, Símbolos, Errores)
    ========================================================= */
-QTableWidget {
+QTableWidget, QTreeWidget, QListView {
     background-color: #EEEEE8;
     gridline-color: transparent;
     border: none;
     alternate-background-color: #F5F5F0;
     font-family: "Fira Code", "Cascadia Code", "Consolas", monospace;
     font-size: 12px;
+    color: #1A1A1A;
 }
 
-QTableWidget::item {
+QTableWidget::item, QTreeWidget::item, QListView::item {
     padding: 6px 10px;
     border-bottom: 1px solid #DDDDD6;
     color: #1A1A1A;
 }
 
-QTableWidget::item:selected {
+QTableWidget::item:selected, QTreeWidget::item:selected {
     background-color: rgba(0, 101, 101, 0.12);
     color: #1A1A1A;
 }
 
-QTableWidget::item:hover {
+QTableWidget::item:hover, QTreeWidget::item:hover {
     background-color: #E0F2F2;
 }
 
@@ -209,11 +218,52 @@ QHeaderView::section:last {
 }
 
 /* =========================================================
-   AST Graph widget
+   AST Graph widget y Topbars internas
    ========================================================= */
 #ast_graph_view {
     background-color: #F5F5F0;
     border: none;
+}
+
+#ast_toolbar {
+    background-color: rgba(245, 245, 240, 0.8);
+    border-bottom: 1px solid #DDDDD6;
+}
+
+#ast_zoom_btn {
+    background-color: #E8E8E2;
+    color: #5A5A5A;
+    font-size: 14px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+#ast_zoom_btn:hover {
+    background-color: #DDDDD6;
+    color: #006565;
+}
+
+/* ComboBox de Recorridos AST */
+QComboBox {
+    background-color: #EEEEE8;
+    border: 1px solid #DDDDD6;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: #1A1A1A;
+}
+
+QComboBox:hover {
+    border: 1px solid #8A8A8A;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #F5F5F0;
+    border: 1px solid #DDDDD6;
+    selection-background-color: rgba(0, 101, 101, 0.12);
+    selection-color: #1A1A1A;
+    color: #1A1A1A;
 }
 
 /* =========================================================
@@ -286,12 +336,12 @@ QStatusBar::item {
 }
 
 /* =========================================================
-   Tooltip
+   Tooltip (CORREGIDO DE NEGRO A PAPER & INK)
    ========================================================= */
 QToolTip {
-    background-color: #1A1A1A;
-    color: #F5F5F0;
-    border: none;
+    background-color: #F5F5F0;
+    color: #1A1A1A;
+    border: 1px solid #DDDDD6;
     padding: 4px 8px;
     border-radius: 3px;
     font-size: 12px;
@@ -314,46 +364,4 @@ QLabel {
     font-weight: 700;
     color: #5A5A5A;
     letter-spacing: 0.8px;
-}
-
-/* =========================================================
-   Symbol table (Semántico tab)
-   ========================================================= */
-#symbol_table {
-    background-color: #EEEEE8;
-    border: none;
-    font-family: "Fira Code", "Cascadia Code", "Consolas", monospace;
-    font-size: 12px;
-}
-
-/* Error list */
-#error_list {
-    background-color: #EEEEE8;
-    border: none;
-    font-family: "Fira Code", "Cascadia Code", "Consolas", monospace;
-    font-size: 12px;
-    color: #1A1A1A;
-}
-
-/* =========================================================
-   AST controls — zoom buttons
-   ========================================================= */
-#ast_controls {
-    background-color: rgba(245, 245, 240, 0.92);
-    border-radius: 6px;
-    padding: 4px;
-}
-
-#ast_zoom_btn {
-    background-color: transparent;
-    color: #5A5A5A;
-    font-size: 16px;
-    padding: 4px 10px;
-    border-radius: 3px;
-    font-weight: bold;
-}
-
-#ast_zoom_btn:hover {
-    background-color: #EEEEE8;
-    color: #006565;
 }
