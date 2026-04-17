@@ -127,6 +127,12 @@ class ASTGraphWidget(QWidget):
 
         calculate_positions(root_node, 0)
         self._render_scene()
+        
+        # Auto-Zoom
+        margin = 50
+        rect = self.scene.itemsBoundingRect()
+        rect.adjust(-margin, -margin, margin, margin)
+        self.view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
 
     def _render_scene(self) -> None:
         self.scene.clear()

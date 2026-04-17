@@ -92,9 +92,13 @@ class CodeEditorWidget(QPlainTextEdit):
         super().__init__(parent)
         self.setObjectName("code_editor")
         self._error_selections: List[QTextEdit.ExtraSelection] = []
+        self._error_messages: dict[int, str] = {}  # line_idx -> error msg
 
         self._init_ui()
         self._connect_signals()
+        
+        # Activar tracking del ratón para tooltips
+        self.setMouseTracking(True)
 
     def _init_ui(self) -> None:
         # Font setup (Fira Code preferido)
@@ -130,10 +134,20 @@ class CodeEditorWidget(QPlainTextEdit):
         errors: Lista de objetos (e.g. AnalysisError) que posean atributo `line`.
         """
         self._error_selections.clear()
+        self._error_messages.clear()
         doc = self.document()
 
         for err in errors:
             line_idx = getattr(err, "line", 1) - 1
+            msg = getattr(err, "message", "Error in line")
+            
+            # Guardamos el mensaje para el tooltip en esta línea
+            existing_msg = self._error_messages.get(line_idx)
+            if existing_msg:
+                self._error_messages[line_idx] = existing_msg + "\n" + msg
+            else:
+                self._error_messages[line_idx] = msg
+
             if 0 <= line_idx < doc.blockCount():
                 block = doc.findBlockByNumber(line_idx)
                 
@@ -173,6 +187,21 @@ class CodeEditorWidget(QPlainTextEdit):
             extra.append(selection)
             
         self.setExtraSelections(extra)
+
+    def mouseMoveEvent(self, event) -> None:
+        super().mouseMoveEvent(event)
+        
+        # Encontrar la posición lógica y ver si empata con un error
+        cursor = self.cursorForPosition(event.pos())
+        line_idx = cursor.blockNumber()
+        
+        msg = self._error_messages.get(line_idx)
+        if msg:
+            from PyQt6.QtWidgets import QToolTip
+            QToolTip.showText(event.globalPosition().toPoint(), msg, self)
+        else:
+            from PyQt6.QtWidgets import QToolTip
+            QToolTip.hideText()
 
     # ------------------------------------------------------------------
     # Line number gutter

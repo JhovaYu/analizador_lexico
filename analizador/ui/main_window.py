@@ -2,18 +2,19 @@
 ui/main_window.py — Orquestador Principal.
 Responsabilidad:
 - Integrar CodeEditor, Tabs y GraphView en el layout general.
-- Ejecutar el flujo de compilación (Paso a Paso o Analizar Todo).
+- Ejecutar el flujo de compilación (Paso a Paso o Analizar Todo en Vivo).
 """
 import sys
+import csv
 from typing import Optional, List
 
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QSplitter, QTabWidget, QLabel, QPushButton,
-    QStatusBar, QApplication
+    QStatusBar, QApplication, QRadioButton, QButtonGroup,
+    QFileDialog
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont
 
 # Componentes atómicos
 from ui.widgets.code_editor import CodeEditorWidget
@@ -35,15 +36,15 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
         self.setMinimumSize(900, 600)
         
-        # 0: Inicio, 1: Léxico listo, 2: Sintáctico listo, 3: Semántico listo
         self.pipe_state = 0
-        
-        # Guardado de state temporal
         self._current_tokens = []
         self._current_ast = None
         self._sem_errors = []
         
         self._build_ui()
+        
+        # Conectar eventos en vivo
+        self._editor.textChanged.connect(self._on_text_changed)
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -65,7 +66,6 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(self._syn_tab, "2. Sintáctico")
         self._tabs.addTab(self._sem_tab, "3. Semántico")
         
-        # Splitter Editor | Tabs
         self._h_split = QSplitter(Qt.Orientation.Horizontal)
         self._h_split.addWidget(self._editor)
         self._h_split.addWidget(self._tabs)
@@ -86,9 +86,25 @@ class MainWindow(QMainWindow):
         lbl = QLabel("Jarvis ⬡")
         lbl.setObjectName("app_title")
         hl.addWidget(lbl)
+        
+        # Modo de Ejecución
+        mode_layout = QHBoxLayout()
+        mode_layout.setContentsMargins(20, 0, 20, 0)
+        self.rb_live = QRadioButton("Modo en Vivo")
+        self.rb_live.setChecked(True)
+        self.rb_step = QRadioButton("Paso a Paso")
+        
+        self.mode_group = QButtonGroup()
+        self.mode_group.addButton(self.rb_live)
+        self.mode_group.addButton(self.rb_step)
+        
+        mode_layout.addWidget(self.rb_live)
+        mode_layout.addWidget(self.rb_step)
+        hl.addLayout(mode_layout)
+        
         hl.addStretch()
         
-        self.btn_step = QPushButton("Paso a Paso")
+        self.btn_step = QPushButton("Próximo Paso")
         self.btn_step.setObjectName("btn_step")
         self.btn_step.clicked.connect(self._on_step)
         hl.addWidget(self.btn_step)
@@ -97,11 +113,61 @@ class MainWindow(QMainWindow):
         self.btn_all.setObjectName("btn_analyze")
         self.btn_all.clicked.connect(self._on_analyze_all)
         hl.addWidget(self.btn_all)
+        
+        btn_clear = QPushButton("Limpiar")
+        btn_clear.setObjectName("btn_clear")
+        btn_clear.clicked.connect(self._on_clear)
+        hl.addWidget(btn_clear)
+        
+        btn_export = QPushButton("⬇ Exportar CSV")
+        btn_export.setObjectName("btn_export")
+        btn_export.clicked.connect(self._on_export)
+        hl.addWidget(btn_export)
+        
         return bar
 
     # ----------------------------------------------------------------------
-    # STATE MACHINE (Paso a Paso)
+    # Eventos y Máquina de Estados
     # ----------------------------------------------------------------------
+    def _on_text_changed(self):
+        if self.rb_live.isChecked():
+            # Si escribimos lento en tiempo real, ejecutamos TODO automáticametne.
+            self._on_analyze_all()
+        else:
+            # En paso a paso, al editar se pierde la garantía, reiniciamos.
+            if self.pipe_state != 0:
+                self._reset_state()
+                self._status.showMessage("⚠ Código modificado. Estado reseteado a Inicio.")
+
+    def _on_clear(self):
+        self._editor.blockSignals(True)
+        self._editor.clear()
+        self._editor.blockSignals(False)
+        self._reset_state()
+        self._lex_tab.populate([])
+        # Resetear grafo enviando nada
+        self._syn_tab.set_tree(None, [], [], [])
+        self._sem_tab.populate([], [])
+        self._status.showMessage("Editor y estados limpiados.")
+
+    def _on_export(self):
+        if not self._current_tokens:
+            self._status.showMessage("⚠ No hay tokens para exportar.")
+            return
+        
+        path, _ = QFileDialog.getSaveFileName(self, "Exportar tokens", "tokens.csv", "CSV (*.csv)")
+        if not path:
+            return
+            
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=self._current_tokens[0].keys())
+                writer.writeheader()
+                writer.writerows(self._current_tokens)
+            self._status.showMessage(f"✓ Exportado exitosamente en: {path}")
+        except Exception as e:
+            self._status.showMessage(f"❌ Error guardando: {e}")
+
     def _on_step(self):
         source = self._editor.toPlainText().strip()
         if not source:
@@ -132,6 +198,7 @@ class MainWindow(QMainWindow):
     def _on_analyze_all(self):
         source = self._editor.toPlainText().strip()
         if not source:
+            self._reset_state()
             self._status.showMessage("⚠ Editor vacío.")
             return
 
@@ -139,6 +206,9 @@ class MainWindow(QMainWindow):
         self._do_lexical(source)
         if self._do_syntactic(source):
             self._do_semantic()
+            
+        # Update metrics status final en ambos casos de éxito completo
+        self._update_status_metrics()
 
     def _reset_state(self):
         self.pipe_state = 0
@@ -147,7 +217,14 @@ class MainWindow(QMainWindow):
         self._current_ast = None
         self._current_tokens = []
         self._sem_errors = []
-        self._status.showMessage("Estado reiniciado.")
+        
+    def _update_status_metrics(self):
+        tok_count = len(self._current_tokens)
+        err_count = len([e for e in self._sem_errors if getattr(e, 'severity', 1) == 1])
+        # Buscamos tokens lexicos malos (attribute = -1)
+        lex_errs = sum(1 for t in self._current_tokens if t.get("attribute") == -1)
+        
+        self._status.showMessage(f"✓ Análisis finalizado: {tok_count} Tokens | {lex_errs} Err. Léxicos | {err_count} Err. Semánticos")
 
     # ----------------------------------------------------------------------
     # PIPELINE ACTIONS
@@ -156,7 +233,6 @@ class MainWindow(QMainWindow):
         lexer = DFALexer()
         tokens = lexer.tokenize(source)
         
-        # Mapear al dumb component dict struct
         formatted = []
         for t in tokens:
             formatted.append({
@@ -169,8 +245,10 @@ class MainWindow(QMainWindow):
         
         self._current_tokens = tokens
         self._lex_tab.populate(formatted)
-        self._tabs.setCurrentIndex(0)
-        self._status.showMessage("Fase 1: Análisis Léxico Completado.")
+        
+        if not self.rb_live.isChecked():
+            self._tabs.setCurrentIndex(0)
+            self._status.showMessage("Fase 1: Análisis Léxico Completado.")
 
     def _do_syntactic(self, source: str) -> bool:
         try:
@@ -180,12 +258,15 @@ class MainWindow(QMainWindow):
             post = get_postorder(self._current_ast)
             
             self._syn_tab.set_tree(self._current_ast, pre, ino, post)
-            self._tabs.setCurrentIndex(1)
-            self._status.showMessage("Fase 2: Análisis Sintáctico Completado.")
+            
+            if not self.rb_live.isChecked():
+                self._tabs.setCurrentIndex(1)
+                self._status.showMessage("Fase 2: Análisis Sintáctico Completado.")
             return True
         except Exception as e:
             self._status.showMessage(f"❌ Error de Sintaxis: {e}")
-            self._tabs.setCurrentIndex(1)
+            if not self.rb_live.isChecked():
+                self._tabs.setCurrentIndex(1)
             return False
 
     def _do_semantic(self):
@@ -195,7 +276,6 @@ class MainWindow(QMainWindow):
         analyzer = SemanticAnalyzer()
         self._sem_errors = analyzer.analyze(self._current_ast)
         
-        # Preparar data
         symbols_formatted = []
         for sym in analyzer.symbol_table.all_symbols():
             symbols_formatted.append({
@@ -207,10 +287,10 @@ class MainWindow(QMainWindow):
             
         self._sem_tab.populate(symbols_formatted, self._sem_errors)
         self._editor.highlight_errors(self._sem_errors)
-        self._tabs.setCurrentIndex(2)
         
-        err_msg = f"{len([e for e in self._sem_errors if getattr(e, 'severity', 1) == 1])} errores"
-        self._status.showMessage(f"Fase 3: Semántica Completada ({err_msg}).")
+        if not self.rb_live.isChecked():
+            self._tabs.setCurrentIndex(2)
+            self._update_status_metrics()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
